@@ -196,6 +196,62 @@ export function resetBodyMargin() {
 	document.body.style.margin = '0px';
 }
 
+export interface ViewportOffset {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+// Store viewport offset globally for use in dimension calculations
+let globalViewportOffset: ViewportOffset | null = null;
+
+/**
+ * Gets the current viewport offset configuration
+ */
+export function getViewportOffset(): ViewportOffset | null {
+	return globalViewportOffset;
+}
+
+/**
+ * Applies viewport offset/crop to show only a portion of the full layout
+ * @param viewportOffset - Object with x, y, width, height defining the viewport window
+ */
+export function applyViewportOffset(viewportOffset: ViewportOffset | string | undefined): void {
+	if (!viewportOffset) {
+		globalViewportOffset = null;
+		return;
+	}
+
+	let offset: ViewportOffset;
+	if (typeof viewportOffset === 'string') {
+		// Parse string format: "x,y,width,height"
+		const parts = viewportOffset.split(',').map((p) => parseInt(p.trim(), 10));
+		if (parts.length !== 4 || parts.some((p) => isNaN(p))) {
+			debug('Invalid viewportOffset format. Expected "x,y,width,height" or object. Got: %s', viewportOffset);
+			return;
+		}
+		offset = { x: parts[0], y: parts[1], width: parts[2], height: parts[3] };
+	} else {
+		offset = viewportOffset;
+	}
+
+	globalViewportOffset = offset;
+	debug('Applying viewport offset: %O', offset);
+
+	// Apply transform to body to shift the viewport
+	document.body.style.transform = `translate(-${offset.x}px, -${offset.y}px)`;
+	document.body.style.transformOrigin = 'top left';
+
+	// Set overflow hidden on html to clip content to viewport
+	document.documentElement.style.overflow = 'hidden';
+	document.documentElement.style.width = `${offset.width}px`;
+	document.documentElement.style.height = `${offset.height}px`;
+
+	// Body should remain at full size to allow proper positioning
+	// The transform and overflow will handle the clipping
+}
+
 export function setTransitionsDefinition(smilObject: SMILFileObject) {
 	if (Object.keys(smilObject.transition).length > 0 && isNil(document.getElementById(HtmlEnum.transitionStyleId))) {
 		const cssFadeOut = `@keyframes fadeOut {

@@ -1,6 +1,6 @@
 {
   "name": "@signageos/smil-player",
-  "version": "3.2.5",
+  "version": "3.2.6-debug",
   "description": "SMIL player",
   "main": "dist/index.html",
   "files": [
@@ -150,6 +150,12 @@
         "valueType": "string",
         "description": "If videos should be played on background or not",
         "placeholder": "true"
+      },
+      {
+        "name": "viewportOffset",
+        "valueType": "string",
+        "description": "Viewport offset/crop configuration to show only a portion of the full layout. Format: 'x,y,width,height' string or {x, y, width, height} object. Useful for multi-display setups where each display shows a different portion of a larger layout.",
+        "placeholder": "0,0,1920,1080"
       }
     ]
   }

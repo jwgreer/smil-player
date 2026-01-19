@@ -18,6 +18,7 @@ import Debug from 'debug';
 import { RegionAttributes, RegionsObject } from '../../../models/xmlJsonModels';
 import { XmlTags } from '../../../enums/xmlEnums';
 import { parentGenerationRemove, randomPlaylistPlayableTagsRegex, SMILEnums } from '../../../enums/generalEnums';
+import { getViewportOffset } from './htmlTools';
 import { parseNestedRegions } from '../../xmlParser/tools';
 import { SMILAudio, SMILImage, SMILVideo, SMILWidget, VideoParams } from '../../../models/mediaModels';
 import difference from 'lodash/difference';
@@ -235,10 +236,14 @@ export function generateBackupImagePlaylist(imageUrl: string, repeatCount: strin
 }
 
 export function getDefaultRegion() {
+	const viewportOffset = getViewportOffset();
+	const width = viewportOffset ? viewportOffset.width : document.documentElement.clientWidth;
+	const height = viewportOffset ? viewportOffset.height : document.documentElement.clientHeight;
+	
 	return {
 		rootLayout: {
-			width: `${document.documentElement.clientWidth}`,
-			height: `${document.documentElement.clientHeight}`,
+			width: `${width}`,
+			height: `${height}`,
 			top: `0`,
 			left: `0`,
 			regionName: SMILEnums.defaultRegion,

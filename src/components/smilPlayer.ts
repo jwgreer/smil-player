@@ -7,7 +7,7 @@ import { SMILFile, SMILFileObject } from '../models/filesModels';
 import { isNil } from 'lodash';
 import { FileStructure } from '../enums/fileEnums';
 import { createLocalFilePath, getFileName } from './files/tools';
-import { resetBodyContent, resetBodyMargin, setTransitionsDefinition } from './playlist/tools/htmlTools';
+import { resetBodyContent, resetBodyMargin, setTransitionsDefinition, applyViewportOffset } from './playlist/tools/htmlTools';
 // @ts-ignore
 import backupImage from '../../public/backupImage/backupImage.jpg';
 import { generateBackupImagePlaylist, getDefaultRegion, removeWhitespace, sleep } from './playlist/tools/generalTools';
@@ -21,7 +21,7 @@ import { PlaylistProcessor } from './playlist/playlistProcessor/playlistProcesso
 import { PlaylistDataPrepare } from './playlist/playlistDataPrepare/playlistDataPrepare';
 import { applyFetchPolyfill } from '../polyfills/fetch';
 import { ISmilPlayer } from './ISmilPlayer';
-// import Debug from 'debug';
+import Debug from 'debug';
 
 applyFetchPolyfill();
 
@@ -45,8 +45,13 @@ export class SmilPlayer implements ISmilPlayer {
 	public start = async () => {
 		await sos.onReady();
 		debug('sOS is ready');
-		// Debug.enable('@signageos/smil-player:*');
+		Debug.enable('@signageos/smil-player:*');
 		// Debug.disable();
+
+		// Apply viewport offset if configured
+		if (sos.config.viewportOffset) {
+			applyViewportOffset(sos.config.viewportOffset);
+		}
 
 		let smilUrl = this.smilUrl ? this.smilUrl : sos.config.smilUrl;
 

@@ -1,6 +1,19 @@
-# Draft
-
 # SMIL player
+
+## Revel Notes
+This is a fork of the open-source SMIL player from signageOS. We have made changes to it to better support our use cases and support our requirements and features in the future.
+
+### Updating the SMIL player
+
+1. After changes are made or have been merged from the main repository, increment the version number accordingly in `package.json`.
+
+2. Run `npm run build-prod` to build the player.
+
+3. Run `sos applet upload` to upload the applet to signageOS.
+
+4. Once the new version has been uploaded and verified, Modify the applet version in the API config to the new version. 
+
+5. You will need to update the device applet config in Box or via API to use the new version for each device.
 
 ## How To Install
 
@@ -40,6 +53,54 @@ const smilPlayer = new SmilPlayer();
 
 // runs indefinitely
 await smilPlayer.start();
+```
+
+### Viewport Offset for Multi-Display Setups
+
+The viewport offset feature allows you to display different portions of a large layout across multiple displays. This is useful when you have a SMIL file with a large root layout (e.g., 4320x1920) that you want to split across multiple displays (e.g., 4 displays of 1080x1920 each).
+
+**Example: Displaying a 4320x1920 layout across 4 displays**
+
+For a SMIL file with root layout 4320x1920, you can configure each display to show a different portion:
+
+**Display 1 (leftmost):**
+```ts
+const smilPlayer = new SmilPlayer({
+	smilUrl: 'http://example.com/dev-wall-1.smil',
+	viewportOffset: '0,0,1080,1920'  // Shows leftmost 1080x1920 portion
+});
+```
+
+**Display 2:**
+```ts
+const smilPlayer = new SmilPlayer({
+	smilUrl: 'http://example.com/dev-wall-1.smil',
+	viewportOffset: '1080,0,1080,1920'  // Shows second 1080x1920 portion
+});
+```
+
+**Display 3:**
+```ts
+const smilPlayer = new SmilPlayer({
+	smilUrl: 'http://example.com/dev-wall-1.smil',
+	viewportOffset: '2160,0,1080,1920'  // Shows third 1080x1920 portion
+});
+```
+
+**Display 4 (rightmost):**
+```ts
+const smilPlayer = new SmilPlayer({
+	smilUrl: 'http://example.com/dev-wall-1.smil',
+	viewportOffset: '3240,0,1080,1920'  // Shows rightmost 1080x1920 portion
+});
+```
+
+You can also use an object format:
+```ts
+const smilPlayer = new SmilPlayer({
+	smilUrl: 'http://example.com/dev-wall-1.smil',
+	viewportOffset: { x: 0, y: 0, width: 1080, height: 1920 }
+});
 ```
 
 ### More advanced usage with extra configuration is being developed. Here is a sneak peek
@@ -148,3 +209,4 @@ await smilPlayer.start();
 | fetchLastModified     | Module responsible for checking media files for updates.                                                                                            |
 | reporter              | Module responsible for reporting about events inside player. Example: content downloaded, content playback started, content playback finished etc.. |
 | playbackController    | Module used for checking if current element in playlist should be played or not based on api response                                               |
+| viewportOffset        | Viewport offset/crop configuration to show only a portion of the full layout. Format: "x,y,width,height" string or {x, y, width, height} object. Useful for multi-display setups where each display shows a different portion of a larger layout. |
