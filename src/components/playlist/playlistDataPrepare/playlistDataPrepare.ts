@@ -22,6 +22,48 @@ import { SMILDynamicEnum } from '../../../enums/dynamicEnums';
 
 const debug = Debug('@signageos/smil-player:playlistDataPrepare');
 
+// Probe a local video file's intrinsic duration via a hidden HTMLVideoElement.
+// Used when the platform's file system doesn't populate videoDurationMs — without
+// a duration, handleVideoPlay has no fallback timer in its race and the video can
+// be stopped early when the next playlist iteration takes over the region.
+function probeVideoDurationFromFile(filePath: string, timeoutMs = 5000): Promise<number> {
+	return new Promise((resolve) => {
+		if (!filePath) {
+			resolve(0);
+			return;
+		}
+		const probe = document.createElement('video');
+		probe.preload = 'metadata';
+		probe.muted = true;
+		probe.style.display = 'none';
+
+		let settled = false;
+		const finish = (ms: number) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			probe.removeAttribute('src');
+			try {
+				probe.load();
+			} catch (err) {
+				// ignore
+			}
+			resolve(ms);
+		};
+
+		probe.addEventListener('loadedmetadata', () => {
+			const duration = probe.duration;
+			finish(isFinite(duration) && duration > 0 ? Math.round(duration * 1000) : 0);
+		});
+		probe.addEventListener('error', () => finish(0));
+
+		setTimeout(() => finish(0), timeoutMs);
+
+		probe.src = filePath;
+	});
+}
+
 export class PlaylistDataPrepare extends PlaylistCommon implements IPlaylistDataPrepare {
 	protected sos: FrontApplet;
 	private globalRegionSyncIndex: { [key: string]: number } = {};
@@ -149,9 +191,17 @@ export class PlaylistDataPrepare extends PlaylistCommon implements IPlaylistData
 					// only for videos downloaded to local storage ( not for streams )
 					if (key.startsWith('video')) {
 						if (mediaFile) {
-							elem.fullVideoDuration = mediaFile.videoDurationMs
-								? mediaFile.videoDurationMs
-								: SMILEnums.defaultVideoDuration;
+							if (mediaFile.videoDurationMs) {
+								elem.fullVideoDuration = mediaFile.videoDurationMs;
+							} else if (!elem.dur && !elem.isStream && elem.localFilePath) {
+								// Platform didn't expose videoDurationMs and SMIL has no dur —
+								// probe the file so the race in handleVideoPlay has a real fallback
+								// instead of falling through to whatever ends the previous element.
+								const probedMs = await probeVideoDurationFromFile(elem.localFilePath);
+								elem.fullVideoDuration = probedMs > 0 ? probedMs : SMILEnums.defaultVideoDuration;
+							} else {
+								elem.fullVideoDuration = SMILEnums.defaultVideoDuration;
+							}
 						}
 
 						// extract protocol for video streams

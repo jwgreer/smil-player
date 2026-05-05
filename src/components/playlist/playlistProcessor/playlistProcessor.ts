@@ -1542,6 +1542,18 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 			}
 		}
 
+		// Register the ended listener BEFORE awaiting play(). On very short videos
+		// or platforms where play() resolves late, the platform can fire 'ended'
+		// before the original registration ran — leaving the race with no end-event
+		// source and depending entirely on the fullVideoDuration fallback.
+		let onceEndedPromise = this.sos.video.onceEnded(
+			params[0],
+			currentRegionInfo.left,
+			currentRegionInfo.top,
+			currentRegionInfo.width,
+			currentRegionInfo.height,
+		);
+
 		try {
 			timedDebug.log('Calling## video play function - single video: %O', video);
 			await sosVideoObject.play(...params);
@@ -1562,6 +1574,15 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 				currentRegionInfo.width,
 				currentRegionInfo.height,
 			);
+			// The first onceEnded promise may have resolved/rejected from the failed
+			// play — create a fresh one for the retry play.
+			onceEndedPromise = this.sos.video.onceEnded(
+				params[0],
+				currentRegionInfo.left,
+				currentRegionInfo.top,
+				currentRegionInfo.width,
+				currentRegionInfo.height,
+			);
 			await sosVideoObject.play(...params);
 		}
 
@@ -1570,15 +1591,7 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 		this.setCurrentlyPlaying(video, 'video', currentRegionInfo.regionName, timedDebug);
 
 		timedDebug.log('Starting## playing video onceEnded function - single video: %O', video);
-		promiseRaceArray.push(
-			this.sos.video.onceEnded(
-				params[0],
-				currentRegionInfo.left,
-				currentRegionInfo.top,
-				currentRegionInfo.width,
-				currentRegionInfo.height,
-			),
-		);
+		promiseRaceArray.push(onceEndedPromise);
 
 		// stop video when playlist was stopped by higher priority
 		promiseRaceArray.push(
