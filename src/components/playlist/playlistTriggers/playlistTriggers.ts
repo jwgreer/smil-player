@@ -41,6 +41,7 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 	public smilObject: SMILFileObject;
 	private readonly processPlaylist: Function;
 	private keyboardHandler: ((event: Event) => void) | null = null;
+	private lastHandledKeyTimestamp: number = -1;
 
 	constructor(sos: FrontApplet, files: FilesManager, options: PlaylistOptions, processPlaylist: Function) {
 		super(sos, files, options);
@@ -666,6 +667,10 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 		};
 
 		this.keyboardHandler = async (event: Event) => {
+			if (event.timeStamp === this.lastHandledKeyTimestamp) {
+				return;
+			}
+			this.lastHandledKeyTimestamp = event.timeStamp;
 			state = await this.processKeyDownEvent(event as KeyboardEvent, state);
 		};
 
