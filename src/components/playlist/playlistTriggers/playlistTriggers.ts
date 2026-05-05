@@ -735,13 +735,12 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 
 		const triggerMedia = this.smilObject.triggers[triggerInfo.trigger];
 
-		// trigger is playing — either cancel it (end condition) or ignore the keypress
+		// trigger is playing — re-press always cancels the in-flight chain so a
+		// second keypress can't spawn a parallel processTrigger* invocation
 		if (this.triggersEndless[triggerInfo.trigger]?.play) {
-			if (triggerMedia.seq?.end === triggerInfo.trigger) {
-				const currentTrigger = this.triggersEndless[triggerInfo.trigger];
-				currentTrigger.play = false;
-				await this.cancelPreviousMedia(currentTrigger.regionInfo);
-			}
+			const currentTrigger = this.triggersEndless[triggerInfo.trigger];
+			currentTrigger.play = false;
+			await this.cancelPreviousMedia(currentTrigger.regionInfo);
 			if (!FunctionKeys[key]) {
 				state = { buffer: buffer, lastKeyTime: currentTime };
 			}
