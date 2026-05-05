@@ -741,6 +741,9 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 			const currentTrigger = this.triggersEndless[triggerInfo.trigger];
 			currentTrigger.play = false;
 			await this.cancelPreviousMedia(currentTrigger.regionInfo);
+			// Wait for the per-region IIFE to finish unwinding before returning, so a fast
+			// re-press can't spawn a new processTrigger* while the prior one is mid-cleanup.
+			await this.awaitInflightInRegion(currentTrigger.regionInfo.regionName);
 			if (!FunctionKeys[key]) {
 				state = { buffer: buffer, lastKeyTime: currentTime };
 			}
@@ -813,6 +816,7 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 		if (currentTrigger.triggerRandom === triggerRandom && (currentTrigger.play || currentTrigger.syncCanceled)) {
 			currentTrigger.play = false;
 			await this.cancelPreviousMedia(regionInfo);
+			await this.awaitInflightInRegion(regionInfo.regionName);
 		}
 	};
 
@@ -838,6 +842,7 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 		if (currentTrigger.triggerRandom === triggerRandom && (currentTrigger.play || currentTrigger.syncCanceled)) {
 			currentTrigger.play = false;
 			await this.cancelPreviousMedia(regionInfo);
+			await this.awaitInflightInRegion(regionInfo.regionName);
 		}
 	};
 
@@ -862,6 +867,7 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 			const regionInfo = this.triggersEndless[triggerInfo.trigger].regionInfo;
 			set(this.triggersEndless, `${triggerInfo.trigger}.play`, false);
 			await this.cancelPreviousMedia(regionInfo);
+			await this.awaitInflightInRegion(regionInfo.regionName);
 			return;
 		}
 

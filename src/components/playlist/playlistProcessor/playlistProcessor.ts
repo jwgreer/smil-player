@@ -120,7 +120,8 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 
 	public hardReset = async (): Promise<void> => {
 		debug('hardReset: cancelling all live playlist versions');
-		for (let i = 0; i <= this.playlistVersion; i++) {
+		const maxCancelledVersion = this.playlistVersion;
+		for (let i = 0; i <= maxCancelledVersion; i++) {
 			this.cancelFunction[i] = true;
 		}
 		this.cancelFunction[SMILScheduleEnum.triggerPlaylistVersion] = true;
@@ -137,18 +138,17 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 		this.triggers.clearState();
 		this.clearCommonState();
 
-		// Clear regular playlist indices but leave triggerPlaylistVersion=true so
-		// any stale trigger loops that haven't exited yet won't resume.
-		// watchTriggers() will flip it back to false before starting fresh loops.
-		for (let i = 0; i <= this.playlistVersion; i++) {
-			delete this.cancelFunction[i];
-		}
-		this.playlistVersion = 0;
+		// Leave cancelled indices set to true forever — if a straggler loop wakes after this
+		// point (e.g., one that was awaiting a long sleep), it must still see "cancelled" and
+		// not resume on `!undefined`. New loops start at maxCancelledVersion + 1, which has
+		// no entry, so they're free to run. triggerPlaylistVersion stays true; watchTriggers()
+		// flips it back to false before starting fresh trigger loops.
+		this.playlistVersion = maxCancelledVersion + 1;
 		this.foundNewPlaylist = false;
 		this.checkFilesLoop = true;
 		this.syncContentPrepared = {};
 
-		debug('hardReset: complete');
+		debug('hardReset: complete, next version = %s', this.playlistVersion);
 	};
 
 	public setStorageUnit = (internalStorageUnit: IStorageUnit) => {
@@ -2037,12 +2037,26 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 							err.message,
 						);
 					}
+					// Drop the prepared-video record now that the IIFE is done with this src,
+					// so the dedup check in handleVideoPrepare won't skip a needed prepare
+					// when the same src is queued again later.
+					if (this.videoPreparing[currentRegionInfo.regionName]?.src === video.src) {
+						delete this.videoPreparing[currentRegionInfo.regionName];
+					}
 					debug(`[${debugId}] finished playing element: %O`, video);
 				})(),
 			];
 
-			// give time to smil player to play video before massive wallclock processing
-			await sleep(1000);
+			// Give the platform up to 1s to start rendering before the next iteration
+			// proceeds, but bail early if this version was cancelled (hardReset / takeover)
+			// so we don't pin the caller's stack while state is being torn down.
+			for (let waited = 0; waited < 1000; waited += 100) {
+				if (this.cancelFunction[version]) {
+					debug(`[${debugId}] playVideo prep wait cancelled at ${waited}ms (version %s)`, version);
+					break;
+				}
+				await sleep(100);
+			}
 		} catch (err) {
 			debug(`[${debugId}] Unexpected error: %O occurred during single video prepare: O%`, err, video);
 			await handlePriorityWhenDone();
@@ -2084,6 +2098,18 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 			return;
 		}
 
+		// Register the ended listener BEFORE awaiting play(). On very short videos
+		// or platforms where play() resolves late, the platform can fire 'ended'
+		// before line 2115's old registration ran — leaving the race with no
+		// end-event source and depending entirely on the fullVideoDuration fallback.
+		let onceEndedPromise = this.sos.video.onceEnded(
+			params[0],
+			currentRegionInfo.left,
+			currentRegionInfo.top,
+			currentRegionInfo.width,
+			currentRegionInfo.height,
+		);
+
 		try {
 			debug(`[${debugId}] Calling## video play function - single video: %O`, video);
 			await sosVideoObject.play(...params);
@@ -2104,6 +2130,15 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 				currentRegionInfo.width,
 				currentRegionInfo.height,
 			);
+			// The first onceEnded promise may have resolved/rejected from the failed play —
+			// create a fresh one for the retry play.
+			onceEndedPromise = this.sos.video.onceEnded(
+				params[0],
+				currentRegionInfo.left,
+				currentRegionInfo.top,
+				currentRegionInfo.width,
+				currentRegionInfo.height,
+			);
 			await sosVideoObject.play(...params);
 		}
 
@@ -2112,15 +2147,7 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 		this.setCurrentlyPlaying(video, 'video', currentRegionInfo.regionName);
 
 		debug(`[${debugId}] Starting## playing video onceEnded function - single video: %O`, video);
-		promiseRaceArray.push(
-			this.sos.video.onceEnded(
-				params[0],
-				currentRegionInfo.left,
-				currentRegionInfo.top,
-				currentRegionInfo.width,
-				currentRegionInfo.height,
-			),
-		);
+		promiseRaceArray.push(onceEndedPromise);
 
 		// stop video when playlist was stopped by higher priority
 		promiseRaceArray.push(

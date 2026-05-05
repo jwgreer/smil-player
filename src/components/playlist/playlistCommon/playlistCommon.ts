@@ -10,7 +10,7 @@ import {
 import { Synchronization } from '../../../models/syncModels';
 import { RegionAttributes } from '../../../models/xmlJsonModels';
 import { SMILTicker } from '../../../models/mediaModels';
-import { debug } from '../tools/generalTools';
+import { debug, sleep } from '../tools/generalTools';
 import { isNil } from 'lodash';
 import { SMILVideo } from '../../../models/mediaModels';
 import FrontApplet from '@signageos/front-applet/es6/FrontApplet/FrontApplet';
@@ -161,6 +161,20 @@ export class PlaylistCommon implements IPlaylistCommon {
 	};
 
 	/**
+	 * Wait for any in-flight per-region IIFE (set in playVideo / playHtmlContent) to unwind
+	 * after a cancellation, with a hard timeout to prevent indefinite hangs. Callers that
+	 * tear down a region externally (trigger re-press, version update) should call this
+	 * after cancelPreviousMedia so the next element doesn't claim the region mid-cleanup.
+	 */
+	protected awaitInflightInRegion = async (regionName: string, timeoutMs: number = 500): Promise<void> => {
+		const inflight = this.promiseAwaiting[regionName]?.promiseFunction;
+		if (!inflight || inflight.length === 0) {
+			return;
+		}
+		await Promise.race([Promise.all(inflight).then(() => undefined), sleep(timeoutMs).then(() => undefined)]);
+	};
+
+	/**
 	 * Cleans up priority tracking after an element finishes waiting or gets skipped
 	 * @param regionName - The region where priority tracking should be cleaned
 	 * @param version - Current playlist version
@@ -264,6 +278,11 @@ export class PlaylistCommon implements IPlaylistCommon {
 				localRegionInfo.height,
 			);
 			video.playing = false;
+			// Drop the prepared-video record so the dedup check in handleVideoPrepare
+			// won't skip a needed prepare when this src plays again later.
+			if (this.videoPreparing[regionInfo.regionName]?.src === video.src) {
+				delete this.videoPreparing[regionInfo.regionName];
+			}
 			debug(`previous ${videoElement} stopped: %O`, video);
 		} catch (err) {
 			debug('error during video cancellation: %O', err);
