@@ -114,6 +114,38 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 		this.smilObject = smilObject;
 	};
 
+	public getSmilObject = (): SMILFileObject | undefined => {
+		return this.smilObject;
+	};
+
+	public hardReset = async (): Promise<void> => {
+		debug('hardReset: cancelling all live playlist versions');
+		for (let i = 0; i <= this.playlistVersion; i++) {
+			this.cancelFunction[i] = true;
+		}
+		this.cancelFunction[SMILScheduleEnum.triggerPlaylistVersion] = true;
+
+		// give in-flight loops a chance to observe the cancel flags and unwind
+		await sleep(150);
+
+		try {
+			await this.stopAllContent(true);
+		} catch (err) {
+			debug('hardReset: stopAllContent threw: %O', err);
+		}
+
+		this.triggers.clearState();
+		this.clearCommonState();
+
+		this.cancelFunction.length = 0;
+		this.playlistVersion = 0;
+		this.foundNewPlaylist = false;
+		this.checkFilesLoop = true;
+		this.syncContentPrepared = {};
+
+		debug('hardReset: complete');
+	};
+
 	public setStorageUnit = (internalStorageUnit: IStorageUnit) => {
 		this.internalStorageUnit = internalStorageUnit;
 	};
