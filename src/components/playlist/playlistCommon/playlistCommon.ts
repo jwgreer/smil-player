@@ -68,13 +68,15 @@ export class PlaylistCommon implements IPlaylistCommon {
 		conditionalExpr: string = '',
 		dynamicPlaylist: DynamicPlaylistEndless = {},
 		dynamicPlaylistId: string | undefined = undefined,
+		shouldContinue?: () => boolean,
 	) => {
 		while (
 			!this.cancelFunction[version] &&
 			(conditionalExpr === '' || !isConditionalExpExpired({ [ExprTag]: conditionalExpr })) &&
 			(!dynamicPlaylistId ||
 				!dynamicPlaylist[dynamicPlaylistId] ||
-				dynamicPlaylist[dynamicPlaylistId]?.play === true)
+				dynamicPlaylist[dynamicPlaylistId]?.play === true) &&
+			(shouldContinue === undefined || shouldContinue())
 		) {
 			try {
 				await fn();

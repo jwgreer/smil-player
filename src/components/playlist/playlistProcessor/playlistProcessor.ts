@@ -1009,8 +1009,12 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 			if (endTime === 0) {
 				let newParent = generateParentId(key, value);
 				let dynamicPlaylistId = undefined;
+				let triggerShouldContinue: (() => boolean) | undefined = undefined;
 				if (value.hasOwnProperty('begin') && value.begin?.startsWith(SMILDynamicEnum.dynamicFormat)) {
 					dynamicPlaylistId = value.begin;
+				} else if (value.hasOwnProperty('begin') && this.triggers.triggersEndless[value.begin as string]) {
+					const triggerId = value.begin as string;
+					triggerShouldContinue = () => this.triggers.triggersEndless[triggerId]?.play === true;
 				}
 
 				await this.runEndlessLoop(
@@ -1021,6 +1025,7 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 					conditionalExpr,
 					this.triggers.dynamicPlaylist,
 					dynamicPlaylistId,
+					triggerShouldContinue,
 				);
 				// play N-times, is determined by higher level tag, because this one has repeatCount=indefinite
 			} else if (endTime > 0 && endTime <= 1000 && version >= this.getPlaylistVersion()) {
