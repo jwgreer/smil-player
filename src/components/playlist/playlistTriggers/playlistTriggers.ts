@@ -42,6 +42,8 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 	public readonly dynamicPlaylist: DynamicPlaylistEndless = {};
 	public smilObject: SMILFileObject;
 	private readonly processPlaylist: Function;
+	private keyboardHandler: ((event: Event) => void) | null = null;
+	private lastHandledKeyTimestamp: number = -1;
 
 	constructor(sos: ISos, files: FilesManager, options: PlaylistOptions, processPlaylist: Function) {
 		super(sos, files, options);
@@ -663,22 +665,38 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 	};
 
 	private watchKeyboardInput = () => {
+		if (this.keyboardHandler !== null) {
+			try {
+				window.parent.document.removeEventListener(SMILTriggersEnum.keyboardEventType, this.keyboardHandler);
+			} catch (err) {
+				debug('error removing keyboard listener from parent: %O', err);
+			}
+			document.removeEventListener(SMILTriggersEnum.keyboardEventType, this.keyboardHandler);
+		}
+
 		let state = {
 			buffer: [],
 			lastKeyTime: Date.now(),
 		};
 
+		this.keyboardHandler = async (event: Event) => {
+			// the same keypress bubbles from document and parent.document and fires the
+			// shared handler twice; dedupe by event.timeStamp so a single press doesn't
+			// start the trigger and immediately cancel it
+			if (event.timeStamp === this.lastHandledKeyTimestamp) {
+				return;
+			}
+			this.lastHandledKeyTimestamp = event.timeStamp;
+			state = await this.processKeyDownEvent(event as KeyboardEvent, state);
+		};
+
 		try {
-			window.parent.document.addEventListener(SMILTriggersEnum.keyboardEventType, async (event) => {
-				state = await this.processKeyDownEvent(event, state);
-			});
+			window.parent.document.addEventListener(SMILTriggersEnum.keyboardEventType, this.keyboardHandler);
 		} catch (err) {
 			debug('error while adding event listener on keyboard: %O', err);
 		}
 
-		document.addEventListener(SMILTriggersEnum.keyboardEventType, async (event) => {
-			state = await this.processKeyDownEvent(event, state);
-		});
+		document.addEventListener(SMILTriggersEnum.keyboardEventType, this.keyboardHandler);
 	};
 
 	private processKeyDownEvent = async (event: KeyboardEvent, state: any): Promise<any> => {
@@ -710,27 +728,31 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 			return state;
 		}
 
-		// regenerate time when was trigger last called
-		set(this.triggersEndless, `${triggerInfo.trigger}.latestEventFired`, Date.now());
 		const triggerMedia = this.smilObject.triggers[triggerInfo.trigger];
 
-		if (!this.triggersEndless[triggerInfo.trigger]?.play) {
-			buffer = [];
-			debug('Starting trigger: %O', triggerInfo.trigger);
-
-			const stringDuration = findDuration(triggerMedia);
-			if (!isNil(stringDuration)) {
-				await this.processTriggerDuration(triggerInfo, triggerMedia, stringDuration);
-			} else {
-				await this.processTriggerRepeatCount(triggerInfo, triggerMedia);
-			}
-		}
-
-		// trigger has end condition defined and was cancelled during playback
-		if (this.triggersEndless[triggerInfo.trigger]?.play && triggerMedia.seq?.end === triggerInfo.trigger) {
+		// trigger is playing — re-press always cancels the in-flight chain so a
+		// second keypress can't spawn a parallel processTrigger* invocation
+		if (this.triggersEndless[triggerInfo.trigger]?.play) {
 			const currentTrigger = this.triggersEndless[triggerInfo.trigger];
 			currentTrigger.play = false;
 			await this.cancelPreviousMedia(currentTrigger.regionInfo);
+			await this.awaitInflightInRegion(currentTrigger.regionInfo.regionName);
+			if (!FunctionKeys[key]) {
+				state = { buffer: buffer, lastKeyTime: currentTime };
+			}
+			return state;
+		}
+
+		// only stamp the event time when actually starting the trigger
+		set(this.triggersEndless, `${triggerInfo.trigger}.latestEventFired`, Date.now());
+		buffer = [];
+		debug('Starting trigger: %O', triggerInfo.trigger);
+
+		const stringDuration = findDuration(triggerMedia);
+		if (!isNil(stringDuration)) {
+			await this.processTriggerDuration(triggerInfo, triggerMedia, stringDuration);
+		} else {
+			await this.processTriggerRepeatCount(triggerInfo, triggerMedia);
 		}
 
 		if (!FunctionKeys[key]) {
@@ -787,6 +809,7 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 		if (currentTrigger.triggerRandom === triggerRandom && (currentTrigger.play || currentTrigger.syncCanceled)) {
 			currentTrigger.play = false;
 			await this.cancelPreviousMedia(regionInfo);
+			await this.awaitInflightInRegion(regionInfo.regionName);
 		}
 	};
 
@@ -812,6 +835,7 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 		if (currentTrigger.triggerRandom === triggerRandom && (currentTrigger.play || currentTrigger.syncCanceled)) {
 			currentTrigger.play = false;
 			await this.cancelPreviousMedia(regionInfo);
+			await this.awaitInflightInRegion(regionInfo.regionName);
 		}
 	};
 
@@ -836,6 +860,7 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 			const regionInfo = this.triggersEndless[triggerInfo.trigger].regionInfo;
 			set(this.triggersEndless, `${triggerInfo.trigger}.play`, false);
 			await this.cancelPreviousMedia(regionInfo);
+			await this.awaitInflightInRegion(regionInfo.regionName);
 			return;
 		}
 

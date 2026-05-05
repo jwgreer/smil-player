@@ -132,6 +132,7 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 			control: {
 				get randomPlaylist() { return self.randomPlaylist; },
 				get dynamicPlaylist() { return self.triggers.dynamicPlaylist; },
+				get triggersEndless() { return self.triggers.triggersEndless; },
 				sleep,
 				waitTimeoutOrFileUpdate: self.waitTimeoutOrFileUpdate,
 				runEndlessLoop: self.runEndlessLoop,

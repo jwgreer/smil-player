@@ -23,6 +23,7 @@ import { parseSmilSchedule } from '../tools/wallclockTools';
 import { SMILDynamicEnum } from '../../../enums/dynamicEnums';
 import { DynamicPlaylist } from '../../../models/dynamicModels';
 import { DynamicPlaylistEndless } from '../../../models/dynamicModels';
+import { TriggerEndless } from '../../../models/triggerModels';
 
 /**
  * Readonly configuration data needed by the traverser.
@@ -87,6 +88,7 @@ export interface ITraverserActions {
 export interface ITraverserControl {
 	readonly randomPlaylist: RandomPlaylist;
 	readonly dynamicPlaylist: DynamicPlaylistEndless;
+	readonly triggersEndless: TriggerEndless;
 
 	sleep(ms: number): Promise<void>;
 	waitTimeoutOrFileUpdate(timeout: number): Promise<boolean>;
@@ -96,6 +98,7 @@ export interface ITraverserControl {
 		conditionalExpr: string,
 		dynamicPlaylist: DynamicPlaylistEndless,
 		dynamicPlaylistId: string | undefined,
+		shouldContinue?: () => boolean,
 	): Promise<void>;
 	getPlaylistVersion(): number;
 	getCancelFunction(): boolean;
@@ -169,6 +172,9 @@ export class PlaylistTraverser {
 			if (XmlTags.extractedElements.concat(XmlTags.textElements).includes(removeDigits(key))) {
 				if (isNil((value as SMILMedia).regionInfo)) {
 					debug('Invalid element with no regionInfo: %O', value);
+					// yield to the macrotask queue so an indefinite parent seq with
+					// no playable children can't pin the event loop
+					await this.control.sleep(50);
 					continue;
 				}
 
@@ -876,8 +882,18 @@ export class PlaylistTraverser {
 			if (endTime === 0) {
 				let newParent = generateParentId(key, value);
 				let dynamicPlaylistId = undefined;
+				let triggerShouldContinue: (() => boolean) | undefined = undefined;
 				if (value.hasOwnProperty('begin') && value.begin?.startsWith(SMILDynamicEnum.dynamicFormat)) {
 					dynamicPlaylistId = value.begin;
+				} else if (value.hasOwnProperty('begin') && this.control.triggersEndless[value.begin as string]) {
+					const triggerId = value.begin as string;
+					// Capture the random at loop entry so a re-press that bumps triggerRandom
+					// supersedes this old chain — otherwise an old loop sees play flip
+					// false→true between iterations and resumes alongside the new one.
+					const startingRandom = this.control.triggersEndless[triggerId]?.triggerRandom;
+					triggerShouldContinue = () =>
+						this.control.triggersEndless[triggerId]?.play === true &&
+						this.control.triggersEndless[triggerId]?.triggerRandom === startingRandom;
 				}
 
 				await this.control.runEndlessLoop(
@@ -888,6 +904,7 @@ export class PlaylistTraverser {
 					conditionalExpr,
 					this.control.dynamicPlaylist,
 					dynamicPlaylistId,
+					triggerShouldContinue,
 				);
 				// play N-times, is determined by higher level tag, because this one has repeatCount=indefinite
 			} else if (endTime > 0 && endTime <= 1000 && version >= this.control.getPlaylistVersion()) {

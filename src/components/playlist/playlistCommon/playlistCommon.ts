@@ -10,7 +10,7 @@ import {
 import { Synchronization } from '../../../models/syncModels';
 import { RegionAttributes } from '../../../models/xmlJsonModels';
 import { SMILTicker } from '../../../models/mediaModels';
-import { debug } from '../tools/generalTools';
+import { debug, sleep } from '../tools/generalTools';
 import { isNil } from 'lodash';
 import { SMILVideo } from '../../../models/mediaModels';
 import { ISos } from '../../../models/sosModels';
@@ -69,13 +69,15 @@ export class PlaylistCommon implements IPlaylistCommon {
 		conditionalExpr: string = '',
 		dynamicPlaylist: DynamicPlaylistEndless = {},
 		dynamicPlaylistId: string | undefined = undefined,
+		shouldContinue?: () => boolean,
 	) => {
 		while (
 			!this.cancelFunction[version] &&
 			(conditionalExpr === '' || !isConditionalExpExpired({ [ExprTag]: conditionalExpr })) &&
 			(!dynamicPlaylistId ||
 				!dynamicPlaylist[dynamicPlaylistId] ||
-				dynamicPlaylist[dynamicPlaylistId]?.play === true)
+				dynamicPlaylist[dynamicPlaylistId]?.play === true) &&
+			(shouldContinue === undefined || shouldContinue())
 		) {
 			try {
 				const result = await fn();
@@ -88,6 +90,20 @@ export class PlaylistCommon implements IPlaylistCommon {
 				throw err;
 			}
 		}
+	};
+
+	/**
+	 * Wait for any in-flight per-region IIFE (set in playVideo / playHtmlContent) to unwind
+	 * after a cancellation, with a hard timeout to prevent indefinite hangs. Callers that
+	 * tear down a region externally (trigger re-press, version update) should call this
+	 * after cancelPreviousMedia so the next element doesn't claim the region mid-cleanup.
+	 */
+	protected awaitInflightInRegion = async (regionName: string, timeoutMs: number = 500): Promise<void> => {
+		const inflight = this.promiseAwaiting[regionName]?.promiseFunction;
+		if (!inflight || inflight.length === 0) {
+			return;
+		}
+		await Promise.race([Promise.all(inflight).then(() => undefined), sleep(timeoutMs).then(() => undefined)]);
 	};
 
 	protected stopAllContent = async (cancelFullscreen: boolean = true) => {
