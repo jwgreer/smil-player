@@ -51,6 +51,24 @@ export class PlaylistCommon implements IPlaylistCommon {
 		this.cancelFunction.push(value);
 	};
 
+	public clearCommonState = () => {
+		for (const key of Object.keys(this.currentlyPlaying)) {
+			delete this.currentlyPlaying[key];
+		}
+		for (const key of Object.keys(this.currentlyPlayingPriority)) {
+			delete this.currentlyPlayingPriority[key];
+		}
+		for (const key of Object.keys(this.promiseAwaiting)) {
+			delete this.promiseAwaiting[key];
+		}
+		for (const key of Object.keys(this.videoPreparing)) {
+			delete this.videoPreparing[key];
+		}
+		for (const key of Object.keys(this.randomPlaylist)) {
+			delete this.randomPlaylist[key];
+		}
+	};
+
 	protected getCancelFunction = (): boolean => {
 		return this.cancelFunction[this.cancelFunction?.length - 1];
 	};

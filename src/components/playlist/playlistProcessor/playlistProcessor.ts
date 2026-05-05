@@ -150,6 +150,43 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 		this.smilObject = smilObject;
 	};
 
+	public getSmilObject = (): SMILFileObject | undefined => {
+		return this.smilObject;
+	};
+
+	public hardReset = async (): Promise<void> => {
+		debug('hardReset: cancelling all live playlist versions');
+		const maxCancelledVersion = this.playlistVersion;
+		for (let i = 0; i <= maxCancelledVersion; i++) {
+			this.cancelFunction[i] = true;
+		}
+		this.cancelFunction[SMILScheduleEnum.triggerPlaylistVersion] = true;
+
+		// give in-flight loops a chance to observe the cancel flags and unwind
+		await sleep(150);
+
+		try {
+			await this.stopAllContent(true);
+		} catch (err) {
+			debug('hardReset: stopAllContent threw: %O', err);
+		}
+
+		this.triggers.clearState();
+		this.clearCommonState();
+
+		// Leave cancelled indices set to true forever — if a straggler loop wakes after
+		// this point (e.g., one that was awaiting a long sleep), it must still see
+		// "cancelled" and not resume on `!undefined`. New loops start at
+		// maxCancelledVersion + 1, which has no entry, so they're free to run.
+		// triggerPlaylistVersion stays true; watchTriggers() flips it back to false
+		// before starting fresh trigger loops.
+		this.playlistVersion = maxCancelledVersion + 1;
+		this.foundNewPlaylist = false;
+		this.checkFilesLoop = true;
+
+		debug('hardReset: complete, next version = %s', this.playlistVersion);
+	};
+
 	public setStorageUnit = (internalStorageUnit: IStorageUnit) => {
 		this.internalStorageUnit = internalStorageUnit;
 	};

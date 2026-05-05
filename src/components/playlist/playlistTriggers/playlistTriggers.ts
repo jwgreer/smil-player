@@ -50,11 +50,32 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 		this.processPlaylist = processPlaylist;
 	}
 
+	public clearState = () => {
+		if (this.keyboardHandler !== null) {
+			try {
+				window.parent.document.removeEventListener(SMILTriggersEnum.keyboardEventType, this.keyboardHandler);
+			} catch (err) {
+				debug('error removing keyboard listener from parent during clearState: %O', err);
+			}
+			document.removeEventListener(SMILTriggersEnum.keyboardEventType, this.keyboardHandler);
+			this.keyboardHandler = null;
+		}
+		this.lastHandledKeyTimestamp = -1;
+		for (const key of Object.keys(this.triggersEndless)) {
+			delete this.triggersEndless[key];
+		}
+		for (const key of Object.keys(this.dynamicPlaylist)) {
+			delete this.dynamicPlaylist[key];
+		}
+	};
+
 	public watchTriggers = async (
 		smilObject: SMILFileObject,
 		playlistVersion: () => number,
 		filesLoop: () => boolean,
 	) => {
+		// Allow new trigger loops to run (hardReset leaves this true to block stale loops)
+		this.cancelFunction[SMILScheduleEnum.triggerPlaylistVersion] = false;
 		this.smilObject = smilObject;
 		this.watchKeyboardInput();
 		this.watchOnTouchOnClick();

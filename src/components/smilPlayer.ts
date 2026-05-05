@@ -22,6 +22,26 @@ import { PlaylistProcessor } from './playlist/playlistProcessor/playlistProcesso
 import { PlaylistDataPrepare } from './playlist/playlistDataPrepare/playlistDataPrepare';
 import { ISmilPlayer } from './ISmilPlayer';
 import { EmptyPlaylistError } from '../errors/EmptyPlaylistError';
+
+function hasStructuralChange(oldObj: SMILFileObject, newObj: SMILFileObject): boolean {
+	const oldSig = JSON.stringify({
+		p: oldObj.playlist,
+		r: oldObj.region,
+		t: oldObj.triggers,
+		ts: oldObj.triggerSensorInfo,
+		s: oldObj.sensors,
+		d: oldObj.dynamic,
+	});
+	const newSig = JSON.stringify({
+		p: newObj.playlist,
+		r: newObj.region,
+		t: newObj.triggers,
+		ts: newObj.triggerSensorInfo,
+		s: newObj.sensors,
+		d: newObj.dynamic,
+	});
+	return oldSig !== newSig;
+}
 import Debug from 'debug';
 import { getStrategy } from './files/fetchingStrategies/fetchingStrategies';
 
@@ -259,6 +279,16 @@ export class SmilPlayer implements ISmilPlayer {
 				if (isEmpty(smilObject.playlist)) {
 					debug('Empty SMIL playlist, smil file wont be processed further');
 					throw new EmptyPlaylistError('Empty SMIL playlist');
+				}
+
+				if (!firstIteration) {
+					const oldSmilObject = this.processor.getSmilObject?.();
+					if (oldSmilObject && hasStructuralChange(oldSmilObject, smilObject)) {
+						debug('SMIL structural change detected, performing hard reset');
+						await this.processor.hardReset();
+						resetBodyContent();
+						firstIteration = true;
+					}
 				}
 
 				this.processor.setSmilObject(smilObject);
