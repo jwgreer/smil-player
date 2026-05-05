@@ -485,6 +485,9 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 			if (XmlTags.extractedElements.concat(XmlTags.textElements).includes(removeDigits(key))) {
 				if (isNil((value as SMILMedia).regionInfo)) {
 					debug('Invalid element with no regionInfo: %O', value);
+					// yield to the macrotask queue so an indefinite parent seq with
+					// no playable children can't pin the event loop
+					await sleep(50);
 					continue;
 				}
 
@@ -1639,6 +1642,12 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 
 		if (isNil(this.currentlyPlaying[regionInfo.regionName])) {
 			this.currentlyPlaying[regionInfo.regionName] = <PlayingInfo>{};
+		}
+
+		// Bail if state was wiped by hardReset while this stale chain was mid-await
+		if (!this.currentlyPlayingPriority[parentRegionName]?.[previousPlayingIndex]) {
+			debug(`[${debugId}] priority state missing for region %s (likely hardReset), aborting`, parentRegionName);
+			return WaitStatus.SKIP;
 		}
 
 		// Wait for previous promise to finish BEFORE claiming priority tracking

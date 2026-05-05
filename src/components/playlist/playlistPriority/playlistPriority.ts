@@ -107,6 +107,11 @@ export class PlaylistPriority extends PlaylistCommon implements IPlaylistPriorit
 		currentVersion: number,
 		triggers: PlaylistTriggers,
 	): Promise<void> => {
+		// Bail if state was wiped by hardReset while this stale chain was mid-await
+		if (!this.currentlyPlayingPriority[priorityRegionName]?.[currentIndex]) {
+			debug('handlePriorityWhenDone: state missing for region %s (likely hardReset), skipping', priorityRegionName);
+			return;
+		}
 		const currentIndexPriority = this.currentlyPlayingPriority[priorityRegionName][currentIndex];
 		debug('Checking if playlist is finished: %O for region: %s', currentIndexPriority, priorityRegionName);
 		// increase times played if not trigger or endless
