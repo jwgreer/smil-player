@@ -1054,7 +1054,13 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 					dynamicPlaylistId = value.begin;
 				} else if (value.hasOwnProperty('begin') && this.triggers.triggersEndless[value.begin as string]) {
 					const triggerId = value.begin as string;
-					triggerShouldContinue = () => this.triggers.triggersEndless[triggerId]?.play === true;
+					// Capture the random at loop entry so a re-press that bumps triggerRandom
+					// supersedes this old chain — otherwise an old loop sees play flip
+					// false→true between iterations and resumes alongside the new one.
+					const startingRandom = this.triggers.triggersEndless[triggerId]?.triggerRandom;
+					triggerShouldContinue = () =>
+						this.triggers.triggersEndless[triggerId]?.play === true &&
+						this.triggers.triggersEndless[triggerId]?.triggerRandom === startingRandom;
 				}
 
 				await this.runEndlessLoop(
