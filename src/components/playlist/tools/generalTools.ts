@@ -22,6 +22,7 @@ import { parseNestedRegions } from '../../xmlParser/tools';
 import { SMILAudio, SMILImage, SMILVideo, SMILWidget, VideoParams } from '../../../models/mediaModels';
 import difference from 'lodash/difference';
 import omit from 'lodash/omit';
+import { checkConditionalExprSafe } from './conditionalTools';
 
 const hasher = require('node-object-hash');
 
@@ -329,8 +330,22 @@ export function getNextElementToPlay(
 		};
 	}
 	const localPlaylist = cloneDeep(playlist);
+
+	// First filter for playable parts
 	const playableParts = Object.keys(localPlaylist).filter((v) => randomPlaylistPlayableTagsRegex.test(v));
-	const picked = playableParts[randomPlaylistInfo[parent].previousIndex++ % playableParts.length];
+
+	// Then filter out any parts with invalid expressions
+	const validParts = playableParts.filter(key => {
+		const element = localPlaylist[key] as PlaylistElement;
+		return !element?.expr || checkConditionalExprSafe(element.expr);
+	});
+	
+	// If no valid parts, return empty object
+	if (validParts.length === 0) {
+		return {};
+	}
+	
+	const picked = validParts[randomPlaylistInfo[parent].previousIndex++ % validParts.length];
 	const diff = difference(playableParts, [picked]);
 	return omit(localPlaylist, diff);
 }
