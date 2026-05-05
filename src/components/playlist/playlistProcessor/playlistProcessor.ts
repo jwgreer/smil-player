@@ -137,7 +137,12 @@ export class PlaylistProcessor extends PlaylistCommon implements IPlaylistProces
 		this.triggers.clearState();
 		this.clearCommonState();
 
-		this.cancelFunction.length = 0;
+		// Clear regular playlist indices but leave triggerPlaylistVersion=true so
+		// any stale trigger loops that haven't exited yet won't resume.
+		// watchTriggers() will flip it back to false before starting fresh loops.
+		for (let i = 0; i <= this.playlistVersion; i++) {
+			delete this.cancelFunction[i];
+		}
 		this.playlistVersion = 0;
 		this.foundNewPlaylist = false;
 		this.checkFilesLoop = true;

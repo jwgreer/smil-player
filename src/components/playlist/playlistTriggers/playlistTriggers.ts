@@ -72,6 +72,8 @@ export class PlaylistTriggers extends PlaylistCommon implements IPlaylistTrigger
 		playlistVersion: () => number,
 		filesLoop: () => boolean,
 	) => {
+		// Allow new trigger loops to run (hardReset leaves this true to block stale loops)
+		this.cancelFunction[SMILScheduleEnum.triggerPlaylistVersion] = false;
 		this.smilObject = smilObject;
 		this.watchKeyboardInput();
 		this.watchOnTouchOnClick();
