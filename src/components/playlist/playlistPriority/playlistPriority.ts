@@ -207,10 +207,10 @@ export class PlaylistPriority extends PlaylistCommon implements IPlaylistPriorit
 				await this.handleNeverBehaviour(priorityRegionName, currentIndex);
 				break;
 			case PriorityRule.stop:
-				this.handleStopBehaviour(priorityRegionName, previousPlayingIndex);
+				await this.handleStopBehaviour(priorityRegionName, previousPlayingIndex);
 				break;
 			case PriorityRule.pause:
-				this.handlePauseBehaviour(priorityRegionName, currentIndex, previousPlayingIndex);
+				await this.handlePauseBehaviour(priorityRegionName, currentIndex, previousPlayingIndex);
 				break;
 			case PriorityRule.defer:
 				await this.handleDeferBehaviour(
@@ -414,11 +414,11 @@ export class PlaylistPriority extends PlaylistCommon implements IPlaylistPriorit
 	 * @param currentIndex - at which index is playlist stored in currentlyPlayingPriority object
 	 * @param previousPlayingIndex - at which index is previously playing playlist stored in currentlyPlayingPriority object
 	 */
-	private handlePauseBehaviour = (
+	private handlePauseBehaviour = async (
 		priorityRegionName: string,
 		currentIndex: number,
 		previousPlayingIndex: number,
-	): void => {
+	): Promise<void> => {
 		const currentIndexPriority = this.currentlyPlayingPriority[priorityRegionName][currentIndex];
 		const previousIndexPriority = this.currentlyPlayingPriority[priorityRegionName][previousPlayingIndex];
 
@@ -433,6 +433,12 @@ export class PlaylistPriority extends PlaylistCommon implements IPlaylistPriorit
 		previousIndexPriority.player.playing = false;
 		previousIndexPriority.behaviour = 'pause';
 		currentIndexPriority.controlledPlaylist = previousPlayingIndex;
+
+		// Release the outgoing video's native overlay plane synchronously before the
+		// takeover playlist preps a new video. Without this, prepare()/play() of the
+		// takeover video races with the still-active plane and the new video decodes
+		// audio but renders no frames on the first iteration.
+		await this.stopOutgoingVideoForTakeover(priorityRegionName);
 	};
 
 	/**
@@ -440,7 +446,10 @@ export class PlaylistPriority extends PlaylistCommon implements IPlaylistPriorit
 	 * @param priorityRegionName - regionName in which playlist will be played
 	 * @param previousPlayingIndex - at which index is previously playing playlist stored in currentlyPlayingPriority object
 	 */
-	private handleStopBehaviour = (priorityRegionName: string, previousPlayingIndex: number): void => {
+	private handleStopBehaviour = async (
+		priorityRegionName: string,
+		previousPlayingIndex: number,
+	): Promise<void> => {
 		const previousIndexPriority = this.currentlyPlayingPriority[priorityRegionName][previousPlayingIndex];
 
 		// if cancelling lower priority playlist which has transitions, hide next element from dom as well
@@ -453,6 +462,24 @@ export class PlaylistPriority extends PlaylistCommon implements IPlaylistPriorit
 		previousIndexPriority.player.stop = true;
 		previousIndexPriority.player.playing = false;
 		previousIndexPriority.behaviour = 'stop';
+
+		// See handlePauseBehaviour: stop the outgoing video's native overlay before the
+		// takeover prepares a new one, otherwise the new video plays audio with no frames.
+		await this.stopOutgoingVideoForTakeover(priorityRegionName);
+	};
+
+	/**
+	 * If the currently rendered media in the takeover region is a video, stop its native
+	 * overlay plane before the higher-priority playlist preps its replacement video.
+	 * Setting player.stop alone only flags the previous playVideo loop to clean up on
+	 * its next 100 ms poll, which is too slow to avoid colliding with the takeover
+	 * prepare() — the symptom is audio-only playback / black frames on the first iteration.
+	 */
+	private stopOutgoingVideoForTakeover = async (priorityRegionName: string): Promise<void> => {
+		const currentlyPlaying = this.currentlyPlaying[priorityRegionName];
+		if (currentlyPlaying?.media === 'video' && currentlyPlaying.regionInfo) {
+			await this.cancelPreviousMedia(currentlyPlaying.regionInfo);
+		}
 	};
 
 	private handleNeverBehaviour = async (priorityRegionName: string, currentIndex: number) => {
